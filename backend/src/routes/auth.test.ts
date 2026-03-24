@@ -247,4 +247,50 @@ describe('Auth Routes', () => {
       expect(res.statusCode).toEqual(204);
     });
   });
+
+  describe('POST /auth/logout-all', () => {
+    let token: string;
+    beforeEach(async () => {
+      await request(app)
+        .post('/auth/register')
+        .send({ email: 'logoutall@example.com', password: 'password123', firstName: 'L', lastName: 'A' });
+      const res = await request(app)
+        .post('/auth/login')
+        .send({ email: 'logoutall@example.com', password: 'password123' });
+      token = res.body.accessToken;
+    });
+
+    it('should return 204 when authenticated', async () => {
+      const res = await request(app)
+        .post('/auth/logout-all')
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.statusCode).toEqual(204);
+    });
+
+    it('should return 401 without a token', async () => {
+      const res = await request(app).post('/auth/logout-all');
+      expect(res.statusCode).toEqual(401);
+    });
+  });
+
+  describe('Refresh token rotation', () => {
+    it('should reject an old refresh token after rotation', async () => {
+      await request(app)
+        .post('/auth/register')
+        .send({ email: 'rotation@example.com', password: 'password123', firstName: 'R', lastName: 'T' });
+      const loginRes = await request(app)
+        .post('/auth/login')
+        .send({ email: 'rotation@example.com', password: 'password123' });
+      const { refreshToken: originalToken } = loginRes.body;
+
+      // First rotation: consume the original token and get a new one
+      const rotateRes = await request(app).post('/auth/refresh').send({ refreshToken: originalToken });
+      expect(rotateRes.statusCode).toEqual(200);
+
+      // Attempting to reuse the original (now revoked) token should fail
+      const reuseRes = await request(app).post('/auth/refresh').send({ refreshToken: originalToken });
+      expect(reuseRes.statusCode).toEqual(401);
+      expectErrorShape(reuseRes.body);
+    });
+  });
 });
